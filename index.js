@@ -4,12 +4,12 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import adminRoute from '../sona-punjab-backend/router/adminRouter.js';
-import bannerRouter from '../sona-punjab-backend/router/bannerRouter.js';
-import pigeonOwnerRouter from '../sona-punjab-backend/router/pigeonOwnerRouter.js';
-import resultRouter from '../sona-punjab-backend/router/resultRouter.js';
-import tornamentRouter from '../sona-punjab-backend/router/tornamentRouter.js';
-import clubRouter from '../sona-punjab-backend/router/clubRouter.js';
+import adminRoute from './router/adminRouter.js';
+import bannerRouter from './router/bannerRouter.js';
+import pigeonOwnerRouter from './router/pigeonOwnerRouter.js';
+import resultRouter from './router/resultRouter.js';
+import tornamentRouter from './router/tornamentRouter.js';
+import clubRouter from './router/clubRouter.js';
 import connectDB from './config/db.js'; // Ensure correct path and .js extension
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger.js';

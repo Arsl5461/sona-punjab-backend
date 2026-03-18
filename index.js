@@ -52,23 +52,23 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customCss: '.swagger-ui .topbar { display: none }',
 }));
 
-app.use(express.static(path.join(process.cwd(), 'build')));
+// app.use(express.static(path.join(process.cwd(), 'build')));
 //app.get('*', (req, res) => {
   //res.sendFile(path.join(process.cwd(), 'build', 'index.html'));
 //}
 
 
 // Catch-all route for React app
-app.get('*', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'build', 'index.html'));
-});
+// app.get('*', (req, res) => {
+//   res.sendFile(path.join(process.cwd(), 'build', 'index.html'));
+// });
 // Simple route for testing
 //app.get('/', (req, res) => {
   //res.send('Hello, World!');
 //}
-  app.get('/*', (req, res) => {
-    res.sendFile(path.join(__dirname,'/build', 'index.html'));
- });
+//   app.get('/*', (req, res) => {
+//     res.sendFile(path.join(__dirname,'/build', 'index.html'));
+//  });
 // Simple route for testing
 //app.get('/', (req, res) => {
  // res.send('Hello, World!');

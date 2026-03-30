@@ -7,12 +7,9 @@ const spec = {
     },
     servers: [
       {
-        url: 'http://localhost:5005',
-        description: 'Development server',
-      },
-      {
-        url: '/',
-        description: 'Current host',
+        url: (process.env.SWAGGER_SERVER_URL || '').replace(/\/$/, '') || '/',
+        description:
+          'API base (set SWAGGER_SERVER_URL in .env for a full URL, e.g. your Render app)',
       },
     ],
   tags: [

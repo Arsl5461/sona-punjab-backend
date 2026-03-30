@@ -1,7 +1,5 @@
-import crypto from "crypto";
 import express from "express";
-import multer from "multer";
-import path from "path";
+import { uploadImage } from "../middleware/multerMemory.js";
 import {
   createBanner,
   deleteBanner,
@@ -10,23 +8,7 @@ import {
 
 const router = express.Router();
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/"); // Directory for storing files
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = `${crypto.randomBytes(16).toString("hex")}${path.extname(
-      file.originalname
-    )}`;
-    cb(null, uniqueName);
-  },
-});
-
-const upload = multer({ storage });
-
-// Define routes
-router.post("/banner", upload.single("bannerPicture"), createBanner);
+router.post("/banner", uploadImage.single("bannerPicture"), createBanner);
 router.get("/get-all-banner", getBanners);
 router.delete("/delete/:bannerId", deleteBanner);
 

@@ -1,3 +1,4 @@
+import { normalizeOwnerDoc } from "../config/mediaUrl.js";
 import pigenOwner from "../models/pigeonOwnerModel.js";
 import TournamentResult from "../models/resultModel.js"; // Adjust the path as necessary
 import Tournament from "../models/tournamentModel.js";
@@ -20,8 +21,9 @@ export const owner = async (req, res) => {
 
     // Fetch owners whose IDs are in the participatingLofts array
     const owners = await pigenOwner.find({ _id: { $in: participatingLofts } });
+    const normalized = owners.map((o) => normalizeOwnerDoc(o));
 
-    res?.status(200).json(owners);
+    res?.status(200).json(normalized);
   } catch (error) {
     console.error("Error fetching owners:", error);
     res

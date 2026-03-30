@@ -1,6 +1,6 @@
-import Tournament from "../models/tournamentModel.js"; // Ensure correct path and .js extension
-import path from "path";
-import fs from "fs";
+import Tournament from "../models/tournamentModel.js";
+import { normalizeTournamentDoc } from "../config/mediaUrl.js";
+import { deleteFileByUrl, uploadBuffer } from "../config/s3.js";
 
 export const tournamentController = {
   createTournament: async (req, res) => {
@@ -13,7 +13,27 @@ export const tournamentController = {
         );
       }
 
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      if (!req.file) {
+        return res
+          .status(400)
+          .send({ message: "Tournament image (tournamentPicture) is required." });
+      }
+
+      let tournamentPicture;
+      try {
+        tournamentPicture = await uploadBuffer({
+          buffer: req.file.buffer,
+          originalName: req.file.originalname,
+          contentType: req.file.mimetype,
+          folder: "tournaments",
+        });
+      } catch (uploadErr) {
+        console.error("S3 upload error:", uploadErr);
+        return res.status(500).send({
+          message: "Failed to upload tournament image",
+          error: uploadErr.message,
+        });
+      }
 
       // Check if participatingLofts is a string, then split it. If it's already an array, use it directly.
       const participatingLofts = Array.isArray(req.body.participatingLofts)
@@ -35,7 +55,7 @@ export const tournamentController = {
       const tournamentData = {
         tournamentName: req.body.tournamentName,
         club: req.body.club,
-        tournamentPicture: `${baseUrl}/${req.file.path}`,
+        tournamentPicture,
         tournamentInfo: req.body.tournamentInfo,
         category: req.body.category,
         numberOfDays: req.body.numberOfDays,
@@ -55,7 +75,7 @@ export const tournamentController = {
 
       const tournament = new Tournament(tournamentData);
       await tournament.save();
-      res.status(201).send(tournament);
+      res.status(201).send(normalizeTournamentDoc(tournament));
     } catch (error) {
       res.status(400).send(error);
     }
@@ -70,7 +90,9 @@ export const getAllTournaments = async (req, res) => {
       return res.status(404).json({ error: "No tournaments found" });
     }
 
-    res.status(200).send(tournaments);
+    res
+      .status(200)
+      .send(tournaments.map((t) => normalizeTournamentDoc(t)));
   } catch (error) {
     console.error("Error fetching tournaments:", error);
     res.status(500).send(error);
@@ -97,7 +119,9 @@ export const getAllAllowedTournaments = async (req, res) => {
         .json({ error: "No tournaments found for this subadmin" });
     }
 
-    res.status(200).send(tournaments);
+    res
+      .status(200)
+      .send(tournaments.map((t) => normalizeTournamentDoc(t)));
   } catch (error) {
     console.error("Error fetching tournaments:", error);
     res.status(500).send(error);
@@ -130,7 +154,7 @@ export const getAllTournamentsByClub = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Tournaments fetched successfully",
-      tournaments,
+      tournaments: tournaments.map((t) => normalizeTournamentDoc(t)),
     });
   } catch (error) {
     res.status(500).json({
@@ -152,7 +176,9 @@ export const getSingleTournament = async (req, res) => {
       return res?.status(404).json({ error: "No tournaments found" });
     }
 
-    res?.status(200).send(tournaments);
+    res
+      ?.status(200)
+      .send(tournaments.map((t) => normalizeTournamentDoc(t)));
   } catch (error) {
     console.error("Error fetching tournaments:", error);
     res?.status(500).send(error);
@@ -180,7 +206,7 @@ export const getTournamentsForCurrentMonth = async (req, res) => {
 
     return res?.status(200).json({
       success: true,
-      data: tournaments,
+      data: tournaments.map((t) => normalizeTournamentDoc(t)),
     });
   } catch (error) {
     console.error("Error fetching tournaments:", error);
@@ -194,7 +220,10 @@ export const getActiveTournament = async (req, res) => {
     if (!tournament) {
       return res.status(404).json({ error: "No active tournament found" });
     }
-    res.status(200).json({ success: true, data: tournament });
+    res.status(200).json({
+      success: true,
+      data: normalizeTournamentDoc(tournament),
+    });
   } catch (error) {
     console.error("Error fetching active tournament:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -215,15 +244,8 @@ export const deleteTournament = async (req, res) => {
       });
     }
 
-    // If tournament had an image, you might want to delete it from the uploads folder
     if (tournament.tournamentPicture) {
-      const imagePath = tournament.tournamentPicture.split("/").pop();
-      const fullPath = path.join("uploads", imagePath);
-
-      // Delete the image file if it exists
-      if (fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath);
-      }
+      await deleteFileByUrl(tournament.tournamentPicture);
     }
 
     res.status(200).json({
@@ -242,7 +264,6 @@ export const deleteTournament = async (req, res) => {
 
 export const updateTournament = async (req, res) => {
   const { id } = req.params;
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
 
   try {
     // If updating status to Active, deactivate all other tournaments first
@@ -330,19 +351,25 @@ export const updateTournament = async (req, res) => {
       }
     }
 
-    // Handle new tournament picture if uploaded
     if (req.file) {
-      // Delete old image if it exists
       if (existingTournament.tournamentPicture) {
-        const oldImagePath = existingTournament.tournamentPicture
-          .split("/")
-          .pop();
-        const fullPath = path.join("uploads", oldImagePath);
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath);
-        }
+        await deleteFileByUrl(existingTournament.tournamentPicture);
       }
-      updateData.tournamentPicture = `${baseUrl}/${req.file.path}`;
+      try {
+        updateData.tournamentPicture = await uploadBuffer({
+          buffer: req.file.buffer,
+          originalName: req.file.originalname,
+          contentType: req.file.mimetype,
+          folder: "tournaments",
+        });
+      } catch (uploadErr) {
+        console.error("S3 upload error:", uploadErr);
+        return res.status(500).send({
+          success: false,
+          message: "Failed to upload tournament image",
+          error: uploadErr.message,
+        });
+      }
     }
 
     // Update the tournament
@@ -361,7 +388,7 @@ export const updateTournament = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: updatedTournament,
+      data: normalizeTournamentDoc(updatedTournament),
     });
   } catch (error) {
     console.error("Error updating tournament:", error);

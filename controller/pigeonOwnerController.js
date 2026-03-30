@@ -1,29 +1,46 @@
 import pigeonOwner from "../models/pigeonOwnerModel.js";
 import Tournament from "../models/tournamentModel.js";
 import mongoose from "mongoose";
+import { normalizeOwnerDoc } from "../config/mediaUrl.js";
+import { deleteFileByUrl, uploadBuffer } from "../config/s3.js";
 
 export const createPigeonOwner = async (req, res) => {
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
-
-  // Check if the required fields are present in the request body
   if (!req.body.name || !req.body.adminId) {
     return res.status(400).send({
       message: "Missing required fields: name, adminId",
     });
   }
 
+  let ownerPicture = "";
+  if (req.file) {
+    try {
+      ownerPicture = await uploadBuffer({
+        buffer: req.file.buffer,
+        originalName: req.file.originalname,
+        contentType: req.file.mimetype,
+        folder: "owners",
+      });
+    } catch (err) {
+      console.error("S3 upload error:", err);
+      return res.status(500).send({
+        message: "Failed to upload owner image",
+        error: err.message,
+      });
+    }
+  }
+
   const pigeonOwnerData = {
     name: req.body.name,
-    ownerPicture: req?.file?.path ? `${baseUrl}/${req.file.path}` : "",
+    ownerPicture,
     address: req.body.address,
-    adminId: req.body.adminId, // Include the adminId in the pigeonOwnerData
-    phone: req.body.phone, // Added phone to the pigeonOwnerData
+    adminId: req.body.adminId,
+    phone: req.body.phone,
   };
 
   try {
     const owner = new pigeonOwner(pigeonOwnerData);
     await owner.save();
-    res.status(201).send(owner);
+    res.status(201).send(normalizeOwnerDoc(owner));
   } catch (error) {
     console.error("Error saving pigeon owner:", error);
     res.status(400).send({
@@ -36,10 +53,11 @@ export const createPigeonOwner = async (req, res) => {
 export const getPigeonOwner = async (req, res) => {
   try {
     const owner = await pigeonOwner.find();
+    const normalized = owner.map((o) => normalizeOwnerDoc(o));
 
     res.status(200).send({
       message: "Banners fetched successfully.",
-      owner,
+      owner: normalized,
     });
   } catch (error) {
     console.error("Error fetching banners:", error);
@@ -54,7 +72,6 @@ export const getPigeonOwnerById = async (req, res) => {
   try {
     const adminId = req.params.adminId;
 
-    // Validate adminId
     if (!adminId) {
       return res.status(400).send({
         message: "adminId is required",
@@ -62,10 +79,11 @@ export const getPigeonOwnerById = async (req, res) => {
     }
 
     const owners = await pigeonOwner.find({ adminId });
+    const normalized = owners.map((o) => normalizeOwnerDoc(o));
 
     res.status(200).send({
       message: "Pigeon owners fetched successfully.",
-      owners,
+      owners: normalized,
     });
   } catch (error) {
     console.error("Error fetching pigeon owners:", error);
@@ -95,7 +113,7 @@ export const getSingleOwnerById = async (req, res) => {
     }
     res.status(200).send({
       message: "Pigeon owners fetched successfully.",
-      owner,
+      owner: normalizeOwnerDoc(owner),
     });
   } catch (error) {
     console.error("Error fetching Single pigeon owners:", error);
@@ -108,45 +126,55 @@ export const getSingleOwnerById = async (req, res) => {
 export const updatePigeonOwner = async (req, res) => {
   try {
     const ownerId = req.params.ownerId;
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-    // Check if ownerId is provided
     if (!ownerId) {
       return res.status(400).send({
         message: "Owner ID is required",
       });
     }
 
-    // Prepare update data
-    const updateData = {
-      name: req.body.name,
-      address: req.body.address,
-      phone: req.body.phone, // Added phone to updateData
-    };
-
-    // If a new image is uploaded, update the ownerPicture
-    if (req.file) {
-      updateData.ownerPicture = req?.file?.path
-        ? `${baseUrl}/${req?.file?.path}`
-        : "";
-    }
-
-    // Find and update the pigeon owner
-    const updatedOwner = await pigeonOwner.findByIdAndUpdate(
-      ownerId,
-      updateData,
-      { new: true } // This option returns the updated document
-    );
-
-    if (!updatedOwner) {
+    const existingOwner = await pigeonOwner.findById(ownerId);
+    if (!existingOwner) {
       return res.status(404).send({
         message: "Pigeon owner not found",
       });
     }
 
+    const updateData = {
+      name: req.body.name,
+      address: req.body.address,
+      phone: req.body.phone,
+    };
+
+    if (req.file) {
+      if (existingOwner.ownerPicture) {
+        await deleteFileByUrl(existingOwner.ownerPicture);
+      }
+      try {
+        updateData.ownerPicture = await uploadBuffer({
+          buffer: req.file.buffer,
+          originalName: req.file.originalname,
+          contentType: req.file.mimetype,
+          folder: "owners",
+        });
+      } catch (err) {
+        console.error("S3 upload error:", err);
+        return res.status(500).send({
+          message: "Failed to upload owner image",
+          error: err.message,
+        });
+      }
+    }
+
+    const updatedOwner = await pigeonOwner.findByIdAndUpdate(
+      ownerId,
+      updateData,
+      { new: true }
+    );
+
     res.status(200).send({
       message: "Pigeon owner updated successfully",
-      owner: updatedOwner,
+      owner: normalizeOwnerDoc(updatedOwner),
     });
   } catch (error) {
     console.error("Error updating pigeon owner:", error);
@@ -161,19 +189,16 @@ export const deletePigeonOwner = async (req, res) => {
   try {
     const ownerId = req.params.ownerId;
 
-    // Check if ownerId is provided
     if (!ownerId) {
       return res.status(400).send({
         message: "Owner ID is required",
       });
     }
 
-    // Start a session for transaction
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      // Find the owner first to get their tournaments
       const owner = await pigeonOwner.findById(ownerId);
 
       if (!owner) {
@@ -184,13 +209,15 @@ export const deletePigeonOwner = async (req, res) => {
         });
       }
 
-      // Delete all tournaments where this owner's loft is participating
       await Tournament.updateMany(
         { participatingLofts: owner.name },
         { $pull: { participatingLofts: owner.name } }
       );
 
-      // Delete the owner
+      if (owner.ownerPicture) {
+        await deleteFileByUrl(owner.ownerPicture);
+      }
+
       const deletedOwner = await pigeonOwner.findByIdAndDelete(ownerId);
 
       await session.commitTransaction();
@@ -198,7 +225,7 @@ export const deletePigeonOwner = async (req, res) => {
 
       res.status(200).send({
         message: "Pigeon owner and related data deleted successfully",
-        owner: deletedOwner,
+        owner: deletedOwner ? normalizeOwnerDoc(deletedOwner) : deletedOwner,
       });
     } catch (error) {
       await session.abortTransaction();

@@ -7,6 +7,7 @@ import pigeonOwnerRouter from './router/pigeonOwnerRouter.js';
 import resultRouter from './router/resultRouter.js';
 import tornamentRouter from './router/tornamentRouter.js';
 import clubRouter from './router/clubRouter.js';
+import headlineRouter from './router/headlineRouter.js';
 import connectDB from './config/db.js'; // Ensure correct path and .js extension
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger.js';
@@ -15,8 +16,9 @@ connectDB();
 
 const app = express();
 
-// Parse JSON payloads
+// Parse JSON and URL-encoded form bodies (e.g. Form Data → x-www-form-urlencoded)
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use(cors("*"))
 
@@ -27,6 +29,7 @@ app.use("/sona-punjab", bannerRouter);
 app.use("/sona-punjab", pigeonOwnerRouter);
 app.use("/sona-punjab", resultRouter);
 app.use("/sona-punjab", clubRouter);
+app.use("/sona-punjab", headlineRouter);
 
 // API documentation (Swagger)
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {

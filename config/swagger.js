@@ -3,7 +3,7 @@ const spec = {
     info: {
       title: 'Sona Punjab API',
       version: '1.0.0',
-      description: 'API documentation for Sona Punjab backend - Admin, Clubs, Pigeon Owners, Tournaments, Results, and Banners',
+      description: 'API documentation for Sona Punjab backend - Admin, Clubs, Headlines, Pigeon Owners, Tournaments, Results, and Banners',
     },
     servers: [
       {
@@ -15,6 +15,7 @@ const spec = {
   tags: [
       { name: 'Admin', description: 'Admin registration, login, and management' },
       { name: 'Clubs', description: 'Club CRUD operations' },
+      { name: 'Headlines', description: 'Headline CRUD operations' },
       { name: 'Pigeon Owners', description: 'Pigeon owner management' },
       { name: 'Tournaments', description: 'Tournament management' },
       { name: 'Results', description: 'Tournament results' },
@@ -206,6 +207,122 @@ const spec = {
           responses: {
             200: { description: 'Club deleted successfully' },
             404: { description: 'Club not found' },
+            500: { description: 'Server error' },
+          },
+        },
+      },
+      '/sona-punjab/create-headline': {
+        post: {
+          tags: ['Headlines'],
+          summary: 'Create a headline',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  oneOf: [
+                    { type: 'string', example: 'Welcome to Sona Punjab' },
+                    {
+                      type: 'object',
+                      required: ['text'],
+                      properties: { text: { type: 'string' } },
+                    },
+                  ],
+                },
+              },
+              'multipart/form-data': {
+                schema: {
+                  type: 'object',
+                  required: ['text'],
+                  properties: {
+                    text: { type: 'string', example: 'Welcome to Sona Punjab' },
+                  },
+                },
+              },
+              'application/x-www-form-urlencoded': {
+                schema: {
+                  type: 'object',
+                  required: ['text'],
+                  properties: {
+                    text: { type: 'string', example: 'Welcome to Sona Punjab' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            201: { description: 'Headline created successfully' },
+            400: { description: 'Headline text required' },
+            500: { description: 'Server error' },
+          },
+        },
+      },
+      '/sona-punjab/get-all-headlines': {
+        get: {
+          tags: ['Headlines'],
+          summary: 'Get all headlines',
+          responses: {
+            200: { description: 'List of all headlines' },
+            500: { description: 'Server error' },
+          },
+        },
+      },
+      '/sona-punjab/update-headline/{headlineId}': {
+        put: {
+          tags: ['Headlines'],
+          summary: 'Update a headline',
+          parameters: [
+            { name: 'headlineId', in: 'path', required: true, schema: { type: 'string' }, description: 'Headline MongoDB ObjectId' },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  oneOf: [
+                    { type: 'string' },
+                    {
+                      type: 'object',
+                      required: ['text'],
+                      properties: { text: { type: 'string' } },
+                    },
+                  ],
+                },
+              },
+              'multipart/form-data': {
+                schema: {
+                  type: 'object',
+                  required: ['text'],
+                  properties: { text: { type: 'string' } },
+                },
+              },
+              'application/x-www-form-urlencoded': {
+                schema: {
+                  type: 'object',
+                  required: ['text'],
+                  properties: { text: { type: 'string' } },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Headline updated successfully' },
+            400: { description: 'Validation error' },
+            404: { description: 'Headline not found' },
+            500: { description: 'Server error' },
+          },
+        },
+      },
+      '/sona-punjab/delete-headline/{headlineId}': {
+        delete: {
+          tags: ['Headlines'],
+          summary: 'Delete a headline',
+          parameters: [
+            { name: 'headlineId', in: 'path', required: true, schema: { type: 'string' }, description: 'Headline MongoDB ObjectId' },
+          ],
+          responses: {
+            200: { description: 'Headline deleted successfully' },
+            404: { description: 'Headline not found' },
             500: { description: 'Server error' },
           },
         },

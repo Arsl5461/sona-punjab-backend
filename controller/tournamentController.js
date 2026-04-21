@@ -2,9 +2,41 @@ import Tournament from "../models/tournamentModel.js";
 import { normalizeTournamentDoc } from "../config/mediaUrl.js";
 import { deleteFileByUrl, uploadBuffer } from "../config/s3.js";
 
+/** Multipart fields arrive as strings; clients often send JSON arrays as one string. */
+function parseStringArrayField(value) {
+  if (value == null || value === "") return [];
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map(String);
+      if (parsed != null) return [String(parsed)];
+      return [];
+    } catch {
+      return value
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [String(value)];
+}
+
 export const tournamentController = {
   createTournament: async (req, res) => {
+    const logPrefix = "[createTournament]";
     try {
+      console.log(`${logPrefix} start`, {
+        at: new Date().toISOString(),
+        ip: req.ip,
+        contentType: req.headers["content-type"],
+      });
+      console.log(`${logPrefix} raw body keys`, Object.keys(req.body || {}));
+      console.log(
+        `${logPrefix} raw body (values only; file excluded)`,
+        JSON.stringify(req.body || {}, null, 2)
+      );
+
       // If the new tournament is being set as active, deactivate all other tournaments
       if (req.body.status === "Active") {
         await Tournament.updateMany(
@@ -14,10 +46,18 @@ export const tournamentController = {
       }
 
       if (!req.file) {
+        console.warn(`${logPrefix} rejected: no tournamentPicture file`);
         return res
           .status(400)
           .send({ message: "Tournament image (tournamentPicture) is required." });
       }
+
+      console.log(`${logPrefix} file`, {
+        fieldname: req.file.fieldname,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+      });
 
       let tournamentPicture;
       try {
@@ -28,30 +68,36 @@ export const tournamentController = {
           folder: "tournaments",
         });
       } catch (uploadErr) {
-        console.error("S3 upload error:", uploadErr);
+        console.error(`${logPrefix} S3 upload error:`, uploadErr);
         return res.status(500).send({
           message: "Failed to upload tournament image",
           error: uploadErr.message,
         });
       }
 
-      // Check if participatingLofts is a string, then split it. If it's already an array, use it directly.
       const participatingLofts = Array.isArray(req.body.participatingLofts)
-        ? req.body.participatingLofts
-        : req.body.participatingLofts
-        ? req.body.participatingLofts.split(",")
-        : [];
+        ? req.body.participatingLofts.map(String)
+        : parseStringArrayField(req.body.participatingLofts);
 
       const allowedAdmins = Array.isArray(req.body.allowedAdmins)
-        ? req.body.allowedAdmins
-        : [];
+        ? req.body.allowedAdmins.map(String)
+        : parseStringArrayField(req.body.allowedAdmins);
 
-      // Check if prizes is a string, then split it. If it's already an array, use it directly.
       const prizes = Array.isArray(req.body.prizes)
-        ? req.body.prizes
-        : req.body.prizes
-        ? req.body.prizes.split(",")
-        : [];
+        ? req.body.prizes.map(String)
+        : parseStringArrayField(req.body.prizes);
+
+      const dates = parseStringArrayField(req.body.dates);
+
+      console.log(`${logPrefix} parsed arrays`, {
+        datesCount: dates.length,
+        datesSample: dates.slice(0, 5),
+        datesRawType: typeof req.body.dates,
+        participatingLoftsCount: participatingLofts.length,
+        prizesCount: prizes.length,
+        allowedAdminsCount: allowedAdmins.length,
+      });
+
       const tournamentData = {
         tournamentName: req.body.tournamentName,
         club: req.body.club,
@@ -59,7 +105,7 @@ export const tournamentController = {
         tournamentInfo: req.body.tournamentInfo,
         category: req.body.category,
         numberOfDays: req.body.numberOfDays,
-        dates: req.body.dates, // Array of dates
+        dates,
         startTime: req.body.startTime,
         numberOfPigeons: req.body.numberOfPigeons,
         noteTimeForPigeons: req.body.noteTimeForPigeons,
@@ -73,10 +119,24 @@ export const tournamentController = {
         allowedAdmins: allowedAdmins,
       };
 
+      console.log(`${logPrefix} tournamentData (before save)`, {
+        ...tournamentData,
+        tournamentPicture: tournamentData.tournamentPicture
+          ? "[url set]"
+          : undefined,
+      });
+
       const tournament = new Tournament(tournamentData);
       await tournament.save();
+      console.log(`${logPrefix} saved ok`, { id: String(tournament._id) });
       res.status(201).send(normalizeTournamentDoc(tournament));
     } catch (error) {
+      console.error(`${logPrefix} failed`, {
+        message: error?.message,
+        name: error?.name,
+        errors: error?.errors,
+        stack: error?.stack,
+      });
       res.status(400).send(error);
     }
   },
@@ -188,18 +248,19 @@ export const getSingleTournament = async (req, res) => {
 export const getTournamentsForCurrentMonth = async (req, res) => {
   try {
     const now = new Date();
-    const startOfMonth = new Date(
-      Date.UTC(now.getFullYear(), now.getMonth(), 1)
-    ); // UTC start of the month
-    const endOfMonth = new Date(
-      Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
-    ); // UTC end of the month
+    const y = now.getUTCFullYear();
+    const m = now.getUTCMonth();
+    const startStr = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const nextUtc = new Date(Date.UTC(y, m + 1, 1));
+    const endExclusiveStr = `${nextUtc.getUTCFullYear()}-${String(
+      nextUtc.getUTCMonth() + 1
+    ).padStart(2, "0")}-01`;
 
     const tournaments = await Tournament.find({
       dates: {
         $elemMatch: {
-          $gte: startOfMonth,
-          $lte: endOfMonth,
+          $gte: startStr,
+          $lt: endExclusiveStr,
         },
       },
     });
@@ -306,14 +367,8 @@ export const updateTournament = async (req, res) => {
       allowedAdmins: allowedAdmins,
     };
 
-    // Parse dates array if it exists
     if (req.body.dates) {
-      try {
-        updateData.dates = JSON.parse(req.body.dates);
-      } catch (e) {
-        console.error("Error parsing dates:", e);
-        updateData.dates = req.body.dates; // Use as is if parsing fails
-      }
+      updateData.dates = parseStringArrayField(req.body.dates);
     }
 
     // Handle participatingLofts updates
@@ -399,8 +454,3 @@ export const updateTournament = async (req, res) => {
     });
   }
 };
-
-getTournamentsForCurrentMonth()
-  .catch((error) => {
-    console.error("Error:", error);
-  });

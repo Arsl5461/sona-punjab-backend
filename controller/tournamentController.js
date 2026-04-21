@@ -325,8 +325,31 @@ export const deleteTournament = async (req, res) => {
 
 export const updateTournament = async (req, res) => {
   const { id } = req.params;
+  const logPrefix = "[updateTournament]";
 
   try {
+    console.log(`${logPrefix} start`, {
+      at: new Date().toISOString(),
+      id,
+      ip: req.ip,
+      contentType: req.headers["content-type"],
+    });
+    console.log(`${logPrefix} raw body keys`, Object.keys(req.body || {}));
+    console.log(
+      `${logPrefix} raw body`,
+      JSON.stringify(req.body || {}, null, 2)
+    );
+    if (req.file) {
+      console.log(`${logPrefix} file`, {
+        fieldname: req.file.fieldname,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+      });
+    } else {
+      console.log(`${logPrefix} no new image file (tournamentPicture omitted)`);
+    }
+
     // If updating status to Active, deactivate all other tournaments first
     if (req.body.status === "Active") {
       await Tournament.updateMany(
@@ -344,6 +367,7 @@ export const updateTournament = async (req, res) => {
     // First get the existing tournament
     const existingTournament = await Tournament.findById(id);
     if (!existingTournament) {
+      console.warn(`${logPrefix} not found`, { id });
       return res.status(404).json({
         success: false,
         message: "Tournament not found",
@@ -392,7 +416,7 @@ export const updateTournament = async (req, res) => {
           updateData.participatingLofts = parsedLofts;
         }
       } catch (e) {
-        console.error("Error parsing participatingLofts:", e);
+        console.error(`${logPrefix} Error parsing participatingLofts:`, e);
       }
     }
 
@@ -401,9 +425,30 @@ export const updateTournament = async (req, res) => {
       try {
         updateData.prizes = JSON.parse(req.body.prizes);
       } catch (e) {
-        console.error("Error parsing prizes:", e);
+        console.error(`${logPrefix} Error parsing prizes:`, e);
         updateData.prizes = req.body.prizes; // Use as is if parsing fails
       }
+    }
+
+    if (updateData.dates) {
+      console.log(`${logPrefix} dates parsed`, {
+        count: updateData.dates.length,
+        sample: updateData.dates.slice(0, 5),
+        datesRawType: typeof req.body.dates,
+      });
+    }
+    if (updateData.participatingLofts) {
+      console.log(`${logPrefix} participatingLofts`, {
+        count: updateData.participatingLofts.length,
+        action: req.body.action || "(replace)",
+      });
+    }
+    if (updateData.prizes) {
+      console.log(`${logPrefix} prizes`, {
+        count: Array.isArray(updateData.prizes)
+          ? updateData.prizes.length
+          : "non-array",
+      });
     }
 
     if (req.file) {
@@ -418,7 +463,7 @@ export const updateTournament = async (req, res) => {
           folder: "tournaments",
         });
       } catch (uploadErr) {
-        console.error("S3 upload error:", uploadErr);
+        console.error(`${logPrefix} S3 upload error:`, uploadErr);
         return res.status(500).send({
           success: false,
           message: "Failed to upload tournament image",
@@ -426,6 +471,13 @@ export const updateTournament = async (req, res) => {
         });
       }
     }
+
+    console.log(`${logPrefix} updateData (before save)`, {
+      ...updateData,
+      tournamentPicture: updateData.tournamentPicture
+        ? "[url set]"
+        : undefined,
+    });
 
     // Update the tournament
     const updatedTournament = await Tournament.findByIdAndUpdate(
@@ -435,18 +487,25 @@ export const updateTournament = async (req, res) => {
     );
 
     if (!updatedTournament) {
+      console.warn(`${logPrefix} findByIdAndUpdate returned null`, { id });
       return res.status(404).json({
         success: false,
         message: "Tournament not found",
       });
     }
 
+    console.log(`${logPrefix} saved ok`, { id: String(updatedTournament._id) });
     res.status(200).json({
       success: true,
       data: normalizeTournamentDoc(updatedTournament),
     });
   } catch (error) {
-    console.error("Error updating tournament:", error);
+    console.error(`${logPrefix} failed`, {
+      message: error?.message,
+      name: error?.name,
+      errors: error?.errors,
+      stack: error?.stack,
+    });
     res.status(500).json({
       success: false,
       message: "Error updating tournament",
